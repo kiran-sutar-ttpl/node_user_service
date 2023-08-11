@@ -1,0 +1,318 @@
+service:
+  name: usersProfiles
+
+plugins:
+  localPath: "../node-modules"
+  modules:
+    - serverless-plugin-ifelse
+    - serverless-prune-plugin
+    - serverless-dotenv-plugin
+    - serverless-offline # This should be the last in the list
+
+custom:
+  dotenv:
+    basePath: ../
+  prune:
+    automatic: true
+    number: 3
+
+provider:
+  name: aws
+  runtime: ${env:RUNTIME,'nodejs12.x'}
+  stage:  ${env:STAGE_NAME,'dev'}
+  region: ${env:REGION,'ap-south-1'}
+  stackName: ${self:service.name}Stack
+  apiName: ${self:service.name}Api
+  endpointType: regional
+  tags:
+    USERVICE: ${self:service.name}
+  environment:
+    STAGE_NAME: ${self:provider.stage}
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:GetItem"
+        - "dynamodb:PutItem"
+        - "dynamodb:Query"
+        - "dynamodb:Scan"
+        - "dynamodb:UpdateItem"
+        - "dynamodb:BatchWriteItem"
+      Resource:
+        - arn:aws:dynamodb:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:table/${self:service.name}
+        - arn:aws:dynamodb:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:table/${self:service.name}Changes
+        - arn:aws:dynamodb:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:table/Clients
+        - arn:aws:dynamodb:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:table/transactions
+        - arn:aws:dynamodb:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:table/wellbeingAssessments
+        - arn:aws:dynamodb:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:table/wellbeingAssessmentsUpdates
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:GetRecords"
+        - "dynamodb:GetShardIterator"
+        - "dynamodb:DescribeStream"
+        - "dynamodb:ListStream"
+        - "kinesis:GetRecords"
+        - "kinesis:GetShardIterator"
+        - "kinesis:DescribeStream"
+        - "kinesis:ListStreams"
+      Resource:
+        - "*" # TODO: This should be reviewed
+    - Effect: 'Allow'
+      Action:
+        - 'lambda:InvokeFunction'
+      Resource:
+        - arn:aws:lambda:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:function:clients-ResponseManager-${self:provider.stage}
+        - arn:aws:lambda:${env:REGION,'ap-south-1'}:${env:ACCOUNT_ID}:function:transactions-ResponseManager-${self:provider.stage}
+    - Effect: "Allow"
+      Action:
+        - "ses:SendEmail"
+      Resource:
+        - arn:aws:ses:ap-south-1:${env:ACCOUNT_ID}:identity/support@thinkitive.us
+
+# you can add packaging information here
+package:
+  exclude:
+  include:
+
+functions:
+  # Function 1
+  usersProfiles:
+    name: ${self:service.name}-ResponseManager-${self:provider.stage}
+    description: This functions controls the user profile.
+    handler: src/${self:service.name}ResponseManager.handler
+    environment:
+      USERS_PROFILES_TABLE_NAME: ${self:service.name}
+      TRANSACTIONS_TABLE_NAME: transactions
+    memorySize: 512
+    versionFunctions: true 
+    timeout: 10
+    retries: 2
+    tags:
+      FunctionType: ResponseManager
+    events:
+      - http:
+          path: v2/${self:service.name}/admin/retrieve
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/adminRetrieve.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: get
+          cors: true
+          authorizer: aws_iam
+      - http:
+          path: v2/${self:service.name}/admin/retrieve/all
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/adminRetrieveAll.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: get
+          cors: true
+          authorizer: aws_iam
+      - http:
+          path: v2/${self:service.name}/user/update
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            schema:
+              application/json: ${file(src/assets/schemas/user_update_profile_schema.json)}
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/userUpdate.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: post
+          cors: true
+          authorizer: aws_iam
+      - http:
+          path: v2/${self:service.name}/user/retrieve
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/userRetrieve.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: get
+          cors: true
+          authorizer: aws_iam
+      - http:
+          path: v2/${self:service.name}/user/disable
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/userDisable.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: post
+          cors: true
+          authorizer: aws_iam
+
+  # Function 2
+  favouriteResource:
+    name: favouriteResource-${self:provider.stage}
+    description: Stores favourite resources for a user in the user profile.
+    handler: src/favouriteResource.handler
+    environment:
+      USERS_PROFILES_TABLE_NAME: ${self:service.name}
+    retries: 3
+    tags:
+      FunctionType: ResponseManager
+    events:
+      - http:
+          path: v2/${self:service.name}/user/favourite
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/userFavourite.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: post
+          cors: true
+          authorizer: aws_iam
+
+  # Function 3
+  goalsResponseManager:
+    name: goals-ResponseManager-${self:provider.stage}
+    description: This functions resets the goalRatings and goal additions
+    handler: src/goalsResponseManager.handler
+    environment:
+      USERS_PROFILES_TABLE_NAME: ${self:service.name}
+      USER_GOALS_TABLE_NAME: userGoals
+    memorySize: 128
+    versionFunctions: true 
+    timeout: 30
+    retries: 1
+    tags:
+      FunctionType: ResponseManager
+    events:
+      - http:
+          path: v2/${self:service.name}/user/goal
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/goalCreate.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: post
+          cors: true
+          authorizer: aws_iam
+      - http:
+          path: v2/${self:service.name}/user/goal
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/goalRemove.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: delete
+          cors: true
+          authorizer: aws_iam
+      - http:
+          path: v2/${self:service.name}/admin/goal/retrieve/all
+          integration: lambda
+          stage: ${self:provider.stage, "dev"}
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: ${file(src/assets/integrationTemplates/goalsAdminRetrieveAll.txt)}
+              application/x-www-form-urlencoded: '{ "stage" : "$context.stage" }'
+          method: get
+          cors: true
+          authorizer: aws_iam
+
+resources:
+  Resources:
+    usersProfilesTable:
+      Type: AWS::DynamoDB::Table
+      UpdateReplacePolicy: Retain
+      DeletionPolicy: Retain
+      Properties:
+        TableName: ${self:service.name}
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: clientId
+            AttributeType: S
+        BillingMode: PAY_PER_REQUEST
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: clientIdIndex
+            KeySchema:
+              - AttributeName: clientId
+                KeyType: HASH
+            Projection:
+              ProjectionType: "ALL"
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        SSESpecification:
+          SSEEnabled: true
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+    usersProfilesChangesTable:
+      Type: AWS::DynamoDB::Table
+      UpdateReplacePolicy: Retain
+      DeletionPolicy: Retain
+      Properties:
+        TableName: usersProfilesChanges
+        AttributeDefinitions:
+          - AttributeName: clientId
+            AttributeType: S
+          - AttributeName: changeId
+            AttributeType: S
+          - AttributeName: date
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+        BillingMode: PROVISIONED
+        KeySchema:
+          - AttributeName: clientId
+            KeyType: HASH
+          - AttributeName: changeId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: dateIndex
+            KeySchema:
+              - AttributeName: clientId
+                KeyType: HASH
+              - AttributeName: date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: "ALL"
+            ProvisionedThroughput:
+              ReadCapacityUnits: 3
+              WriteCapacityUnits: 3
+          - IndexName: userIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: date
+                KeyType: RANGE
+            Projection:
+              ProjectionType: "ALL"
+            ProvisionedThroughput:
+              ReadCapacityUnits: 3
+              WriteCapacityUnits: 3
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        ProvisionedThroughput:
+          ReadCapacityUnits: 2
+          WriteCapacityUnits: 2
+        SSESpecification:
+          SSEEnabled: true
+
+      Type: AWS::IAM::Policy
+      Properties:
+        PolicyDocument: ${file(policyDocument.${self:provider.stage}.json)}
+        PolicyName: ${self:service.name}-policyattachedtocognitoauth
+        Roles:
+          - ${file(../loginSystemProd/amplify/team-provider-info.json):${self:provider.stage}.awscloudformation.AuthRoleName}

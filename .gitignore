@@ -1,0 +1,15 @@
+# package directories
+node_modules
+.DS_Store
+
+# Serverless directories
+.serverless
+
+# Configuration files
+awsConfig.prod.json
+awsConfig.dev.json
+
+
+# policyDocument.dev.json
+# policyDocument.prod.json
+.env

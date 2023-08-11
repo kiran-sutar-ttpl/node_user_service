@@ -1,0 +1,14 @@
+{
+  "operation": "retrieve",
+  "userType": "admin",
+  "query": {
+    "userId": "49cb667d-8a4f-4bed-9eee-01f624ae1d4d"
+  },
+  "params": {
+    "TableName": "usersProfiles",
+    "KeyConditionExpression": "userId = :userId",
+    "ExpressionAttributeValues": {
+      ":userId": "49cb667d-8a4f-4bed-9eee-01f624ae1d4d"
+    }
+  }
+}

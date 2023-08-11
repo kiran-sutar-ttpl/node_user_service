@@ -1,0 +1,10 @@
+{
+    "operation": "update",
+    "userType": "user",
+    "userId": "userc00-cd4f-11ec-9d64-0242ac120002",
+    "body":{
+        "age": 1991,
+        "familyName": "Testing-Kiran",
+        "givenName": "Testing"
+    }
+}

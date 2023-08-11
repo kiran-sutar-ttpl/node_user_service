@@ -1,0 +1,11 @@
+{
+  "operation": "retrieve",
+  "userType": "admin",
+  "params": {
+    "TableName": "usersProfiles",
+    "KeyConditionExpression": "userId = :userId",
+    "ExpressionAttributeValues": {
+      ":userId": "wrongUserId"
+    }
+  }
+}

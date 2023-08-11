@@ -1,0 +1,7 @@
+{
+  "operation": "retrieveAll",
+  "userType": "admin",
+  "params": {
+    "TableName": "usersProfiles"
+  }
+}
